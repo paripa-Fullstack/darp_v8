@@ -44,7 +44,7 @@ def check_and_install():
         except ImportError: _install(pkg)
 
     if missing_required:
-        # Показываем ошибку без консоли через tkinter
+    
         try:
             import tkinter as tk
             from tkinter import messagebox
@@ -63,6 +63,6 @@ def check_and_install():
 
 check_and_install()
 
-# ── Запуск ────────────────────────────────────────────────────────
+
 from core.main_v8 import run_darp_v8
 run_darp_v8()
