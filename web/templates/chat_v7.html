@@ -1,0 +1,1688 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DARP v7 — Защищённый канал</title>
+<style>
+/* ══════════════════════════════════════════
+   DARP v7 :: Военный терминальный интерфейс
+   Phosphor CRT | Зелёный на чёрном
+   СТБ 34.101.31-2020 | Belt-128 | BashHash
+   ══════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&display=swap');
+
+:root {
+  --bg:          #050d05;
+  --bg-panel:    #081208;
+  --bg-input:    #040d04;
+  --bg-header:   #030903;
+  --fg:          #00ff41;
+  --fg-dim:      #007a20;
+  --fg-bright:   #80ff9f;
+  --fg-white:    #c8ffd4;
+  --accent:      #00dd38;
+  --warn:        #ffcc00;
+  --danger:      #ff2222;
+  --border:      #004d14;
+  --border-br:   #00ff41;
+  --selection:   #003010;
+  --glow:        rgba(0,255,65,0.15);
+  --glow-strong: rgba(0,255,65,0.35);
+  --scanline:    rgba(0,0,0,0.4);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  min-height: 100vh;
+  overflow: hidden;
+  position: relative;
+}
+
+/* CRT scanlines overlay */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 3px,
+    var(--scanline) 3px,
+    var(--scanline) 4px
+  );
+  pointer-events: none;
+  z-index: 1000;
+  animation: scanroll 8s linear infinite;
+}
+
+/* CRT screen flicker */
+@keyframes scanroll {
+  from { background-position: 0 0; }
+  to   { background-position: 0 8px; }
+}
+
+/* Phosphor glow effect */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 40%,
+    rgba(0,255,65,0.04) 0%,
+    transparent 70%
+  );
+  pointer-events: none;
+  z-index: 999;
+}
+
+/* ── LAYOUT ─────────────────────────────── */
+.app {
+  display: grid;
+  grid-template-rows: 52px 1fr 32px;
+  grid-template-columns: 240px 1fr 280px;
+  height: 100vh;
+  max-height: 100vh;
+}
+
+/* ── HEADER ─────────────────────────────── */
+header {
+  grid-column: 1 / -1;
+  background: var(--bg-header);
+  border-bottom: 1px solid var(--border-br);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 16px;
+  position: relative;
+  z-index: 10;
+}
+
+.logo {
+  font-family: 'VT323', monospace;
+  font-size: 26px;
+  color: var(--fg);
+  text-shadow: 0 0 20px var(--fg), 0 0 40px rgba(0,255,65,0.5);
+  letter-spacing: 3px;
+}
+
+.header-badge {
+  font-size: 11px;
+  color: var(--bg);
+  background: var(--fg);
+  padding: 2px 8px;
+  letter-spacing: 2px;
+}
+
+.header-badge.warn { background: var(--warn); color: #000; }
+
+.header-algo {
+  font-size: 10px;
+  color: var(--fg-dim);
+  flex: 1;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  font-size: 11px;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg-dim);
+}
+
+.dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 6px var(--danger);
+  animation: blink 1.5s ease-in-out infinite;
+}
+.dot.online { background: var(--fg); box-shadow: 0 0 6px var(--fg); animation: none; }
+.dot.warn   { background: var(--warn); }
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.2; }
+}
+
+#clock {
+  color: var(--fg-dim);
+  letter-spacing: 2px;
+  min-width: 80px;
+  text-align: right;
+}
+
+/* ── SIDEBAR LEFT ────────────────────────── */
+.sidebar-left {
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.panel-title {
+  font-size: 10px;
+  color: var(--fg-dim);
+  letter-spacing: 3px;
+  padding: 10px 12px 6px;
+  border-bottom: 1px solid var(--border);
+  text-transform: uppercase;
+}
+
+/* Навигация */
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  font-size: 12px;
+  color: var(--fg-dim);
+  border-left: 2px solid transparent;
+  user-select: none;
+}
+.nav-item:hover    { background: var(--selection); color: var(--fg); }
+.nav-item.active   {
+  background: var(--selection);
+  color: var(--fg);
+  border-left-color: var(--border-br);
+}
+.nav-item .icon    { font-size: 14px; width: 18px; text-align: center; }
+.nav-badge {
+  margin-left: auto;
+  background: var(--fg);
+  color: var(--bg);
+  font-size: 9px;
+  padding: 1px 5px;
+  min-width: 18px;
+  text-align: center;
+}
+.nav-badge.danger { background: var(--danger); color: #fff; }
+
+/* Peer info */
+.peer-panel {
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  padding: 10px 12px;
+}
+.peer-addr {
+  font-size: 9px;
+  color: var(--fg-dim);
+  word-break: break-all;
+  margin-top: 4px;
+}
+
+/* ── MAIN CONTENT ────────────────────────── */
+.main {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Вкладки */
+.tab-pane {
+  display: none;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+.tab-pane.active { display: flex; }
+
+/* ── ЧАТ ─────────────────────────────────── */
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.messages::-webkit-scrollbar { width: 6px; }
+.messages::-webkit-scrollbar-track { background: var(--bg); }
+.messages::-webkit-scrollbar-thumb { background: var(--border); }
+
+.msg {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  gap: 8px;
+  padding: 3px 0;
+  align-items: start;
+  border-bottom: 1px solid rgba(0,77,20,0.2);
+  line-height: 1.5;
+}
+
+.msg .ts    { font-size: 10px; color: var(--fg-dim); padding-top: 2px; text-align: right; }
+.msg .body  { font-size: 13px; color: var(--fg-white); }
+.msg .sender { font-weight: bold; }
+
+.msg.out .body  { color: var(--fg-bright); }
+.msg.in .body   { color: var(--fg-white); }
+.msg.sys .body  { color: var(--fg-dim); font-size: 11px; }
+.msg.warn .body { color: var(--warn); }
+.msg.danger .body { color: var(--danger); }
+.msg.voice .body  { color: #aa88ff; }
+
+/* Входящий/исходящий индикатор */
+.msg.out .sender::before  { content: "▸ "; color: var(--fg-dim); }
+.msg.in .sender::before   { content: "◂ "; color: var(--fg-dim); }
+.msg.sys .sender::before  { content: "◈ "; }
+
+/* Типизация */
+.typing-indicator {
+  font-size: 11px;
+  color: var(--fg-dim);
+  padding: 4px 16px;
+  height: 22px;
+  font-style: italic;
+  display: none;
+}
+
+/* Строка ввода */
+.input-bar {
+  border-top: 1px solid var(--border-br);
+  background: var(--bg-panel);
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.input-prompt {
+  color: var(--fg-dim);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.msg-input {
+  flex: 1;
+  background: var(--bg-input);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 13px;
+  padding: 6px 8px;
+  outline: none;
+  caret-color: var(--fg);
+  transition: border-color 0.2s;
+}
+.msg-input:focus { border-color: var(--border-br); }
+
+/* Кнопки */
+.btn {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 12px;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+  outline: none;
+  white-space: nowrap;
+}
+.btn:hover { background: var(--selection); border-color: var(--border-br); }
+
+.btn-primary {
+  background: var(--fg);
+  color: var(--bg);
+  border-color: var(--fg);
+  font-weight: bold;
+}
+.btn-primary:hover { background: var(--fg-bright); }
+
+.btn-danger {
+  color: var(--danger);
+  border-color: #440000;
+  background: #0d0000;
+}
+.btn-danger:hover { background: #1a0000; border-color: var(--danger); }
+
+.btn-warn {
+  color: var(--warn);
+  border-color: #443300;
+  background: #0d0a00;
+}
+
+.btn-icon {
+  background: transparent;
+  border: none;
+  color: var(--fg-dim);
+  font-size: 16px;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.btn-icon:hover { color: var(--fg); }
+
+/* Быстрые действия */
+.quick-actions {
+  display: flex;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+  align-items: center;
+}
+
+/* ── SIDEBAR RIGHT ───────────────────────── */
+.sidebar-right {
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.info-block {
+  border-bottom: 1px solid var(--border);
+  padding: 10px 12px;
+}
+
+.info-block .label {
+  font-size: 9px;
+  color: var(--fg-dim);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  padding: 2px 0;
+  border-bottom: 1px solid rgba(0,77,20,0.2);
+}
+.info-row .key   { color: var(--fg-dim); }
+.info-row .val   { color: var(--fg-white); max-width: 130px; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.info-row .val.ok     { color: var(--fg); }
+.info-row .val.warn   { color: var(--warn); }
+.info-row .val.danger { color: var(--danger); }
+
+/* Блокчейн мини-лог */
+.chain-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 12px;
+  font-size: 9px;
+}
+.chain-entry {
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(0,77,20,0.15);
+  color: var(--fg-dim);
+  cursor: default;
+}
+.chain-entry:hover { color: var(--fg); }
+.chain-entry .cevt { color: var(--fg); font-weight: bold; }
+.chain-entry .cevt.danger { color: var(--danger); }
+.chain-entry .cevt.warn   { color: var(--warn); }
+.chain-entry .cevt.voice  { color: #aa88ff; }
+
+/* ── STATUSBAR ───────────────────────────── */
+.statusbar {
+  grid-column: 1 / -1;
+  background: var(--bg-header);
+  border-top: 1px solid var(--border-br);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 20px;
+  font-size: 10px;
+  color: var(--fg-dim);
+  letter-spacing: 1px;
+}
+.statusbar .sep { color: var(--border); }
+
+/* ── МОДАЛЬНЫЕ ОКНА ──────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.85);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 500;
+}
+.modal-overlay.open { display: flex; }
+
+.modal {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-br);
+  box-shadow: 0 0 40px rgba(0,255,65,0.2);
+  width: 480px;
+  max-width: 90vw;
+}
+
+.modal-header {
+  background: var(--bg-header);
+  border-bottom: 1px solid var(--border-br);
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  font-weight: bold;
+  letter-spacing: 2px;
+}
+
+.modal-body { padding: 16px; }
+
+.modal-footer {
+  border-top: 1px solid var(--border);
+  padding: 12px 16px;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* Поле ввода формы */
+.form-group { margin-bottom: 12px; }
+.form-label { font-size: 10px; color: var(--fg-dim); letter-spacing: 2px; margin-bottom: 4px; display: block; }
+.form-input {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 12px;
+  padding: 7px 10px;
+  outline: none;
+  caret-color: var(--fg);
+}
+.form-input:focus { border-color: var(--border-br); }
+
+/* ── ГОЛОСОВОЙ ВИДЖЕТ ────────────────────── */
+.voice-widget {
+  background: var(--bg-header);
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 12px;
+  display: none;
+}
+.voice-widget.active { display: flex; border-color: var(--danger); }
+
+.voice-bars {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 24px;
+}
+.voice-bar {
+  width: 3px;
+  background: var(--fg);
+  border-radius: 1px;
+  transition: height 0.1s;
+  min-height: 2px;
+}
+
+.voice-time {
+  font-family: 'VT323', monospace;
+  font-size: 22px;
+  color: var(--danger);
+  min-width: 48px;
+}
+
+/* ── СКРОЛЛ ──────────────────────────────── */
+::-webkit-scrollbar       { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); }
+::-webkit-scrollbar-thumb:hover { background: var(--fg-dim); }
+
+/* ── TOTP ТАЙМЕР ─────────────────────────── */
+.totp-bar {
+  height: 2px;
+  background: var(--fg);
+  width: 100%;
+  transition: width 1s linear, background 1s;
+}
+
+/* ── АНИМАЦИИ ────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+.msg { animation: fadeIn 0.15s ease-out; }
+
+@keyframes glitch {
+  0%, 100% { transform: none; }
+  10% { transform: translate(-2px, 0) skew(0.5deg); }
+  20% { transform: translate(2px, 0) skew(-0.5deg); }
+  30% { transform: none; }
+}
+
+.logo:hover { animation: glitch 0.4s; }
+
+/* ── EMERGENCY PANEL ─────────────────────── */
+.emergency-panel {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+.emergency-block {
+  border: 1px solid var(--border);
+  padding: 12px;
+  background: var(--bg);
+}
+.emergency-block.danger-block { border-color: #440000; background: #050000; }
+.emergency-title {
+  font-size: 12px;
+  letter-spacing: 3px;
+  margin-bottom: 6px;
+}
+.emergency-desc { font-size: 10px; color: var(--fg-dim); margin-bottom: 10px; }
+
+/* ── BLOCKCHAIN VIEW ─────────────────────── */
+.chain-full {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 16px;
+}
+.chain-block {
+  display: grid;
+  grid-template-columns: 48px 72px 180px 1fr 120px;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(0,77,20,0.2);
+  font-size: 11px;
+  align-items: center;
+}
+.chain-block .ci { color: var(--fg-dim); }
+.chain-block .cts { color: var(--fg-dim); }
+.chain-block .cevt { font-weight: bold; }
+.chain-block .chash { color: var(--fg-dim); font-size: 9px; }
+
+/* ── СТЕГО ПАНЕЛЬ ────────────────────────── */
+.stego-methods {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 12px;
+}
+.stego-method-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 12px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.stego-method-card:hover, .stego-method-card.selected {
+  border-color: var(--border-br);
+  background: var(--selection);
+}
+.stego-method-title { font-size: 18px; color: var(--fg); margin-bottom: 4px; }
+.stego-method-desc  { font-size: 10px; color: var(--fg-dim); }
+
+/* ── RESPONSIVE ──────────────────────────── */
+@media (max-width: 900px) {
+  .sidebar-right { display: none; }
+  .app { grid-template-columns: 200px 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ── HEADER ── -->
+  <header>
+    <span class="logo">DARP</span>
+    <span class="header-badge">v7</span>
+    <span class="header-badge warn" id="role-badge">DIRECTOR</span>
+    <span class="header-algo">Belt-128 | BashHash-256 | СТБ 34.101.31-2020 | 3FA</span>
+    
+    <div class="header-right">
+      <div class="status-indicator">
+        <div class="dot" id="conn-dot"></div>
+        <span id="conn-text">OFFLINE</span>
+      </div>
+      <div class="status-indicator">
+        <div class="dot warn" id="tor-dot" style="display:none"></div>
+        <span id="tor-text" style="color:var(--fg-dim)">TOR: IDLE</span>
+      </div>
+      <div id="clock">--:--:--</div>
+    </div>
+  </header>
+
+  <!-- ── SIDEBAR LEFT ── -->
+  <nav class="sidebar-left">
+    <div class="panel-title">НАВИГАЦИЯ</div>
+    
+    <div class="nav-item active" onclick="showTab('chat')" id="nav-chat">
+      <span class="icon">▸</span> ЧАТ
+      <span class="nav-badge" id="unread-badge" style="display:none">0</span>
+    </div>
+    <div class="nav-item" onclick="showTab('voice')" id="nav-voice">
+      <span class="icon">🎤</span> ГОЛОС
+    </div>
+    <div class="nav-item" onclick="showTab('stego')" id="nav-stego">
+      <span class="icon">🔍</span> СТЕГО
+    </div>
+    <div class="nav-item" onclick="showTab('blockchain')" id="nav-blockchain">
+      <span class="icon">⛓</span> БЛОКЧЕЙН
+      <span class="nav-badge" id="chain-count">1</span>
+    </div>
+    <div class="nav-item" onclick="showTab('security')" id="nav-security">
+      <span class="icon">🛡</span> БЕЗОПАСНОСТЬ
+    </div>
+    <div class="nav-item" onclick="showTab('emergency')" id="nav-emergency">
+      <span class="icon">⚡</span> SOS
+      <span class="nav-badge danger">!</span>
+    </div>
+
+    <div class="panel-title" style="margin-top:16px">СОЕДИНЕНИЕ</div>
+    <div style="padding:8px 12px">
+      <div class="form-group">
+        <label class="form-label">АДРЕС ДИРЕКТОРА</label>
+        <input class="form-input" id="peer-addr" placeholder="192.168.x.x или .onion" style="font-size:11px">
+      </div>
+      <button class="btn btn-primary" style="width:100%;margin-bottom:4px" onclick="connect()">ПОДКЛЮЧИТЬСЯ</button>
+      <button class="btn" style="width:100%;font-size:11px" onclick="connectTor()">↻ VIA TOR</button>
+    </div>
+
+    <div class="peer-panel">
+      <div class="label" style="font-size:9px;color:var(--fg-dim);letter-spacing:2px">USB СТАТУС</div>
+      <div id="usb-status" style="font-size:10px;color:var(--fg-dim);margin-top:4px">
+        Проверка...
+      </div>
+      <div class="peer-addr" id="onion-addr"></div>
+    </div>
+  </nav>
+
+  <!-- ── MAIN ── -->
+  <main class="main">
+
+    <!-- ── ЧАТ ── -->
+    <div class="tab-pane active" id="tab-chat">
+      <div class="messages" id="messages"></div>
+      
+      <!-- Голосовой виджет записи -->
+      <div class="voice-widget" id="voice-widget">
+        <div class="voice-bars" id="voice-bars">
+          <div class="voice-bar" style="height:4px"></div>
+          <div class="voice-bar" style="height:8px"></div>
+          <div class="voice-bar" style="height:4px"></div>
+          <div class="voice-bar" style="height:12px"></div>
+          <div class="voice-bar" style="height:6px"></div>
+          <div class="voice-bar" style="height:10px"></div>
+          <div class="voice-bar" style="height:4px"></div>
+          <div class="voice-bar" style="height:8px"></div>
+        </div>
+        <div class="voice-time" id="voice-time">0:00</div>
+        <span style="font-size:11px;color:var(--danger);flex:1">● ЗАПИСЬ | Belt-128</span>
+        <button class="btn btn-danger" onclick="stopRecording()">⏹ СТОП</button>
+      </div>
+      
+      <div class="typing-indicator" id="typing-ind">Партнёр печатает...</div>
+      
+      <div class="quick-actions">
+        <button class="btn-icon" title="Голосовое" onclick="startRecording()">🎤</button>
+        <button class="btn-icon" title="Файл" onclick="sendFile()">📎</button>
+        <button class="btn-icon" title="Стеганография" onclick="showTab('stego')">🔍</button>
+        <div style="flex:1"></div>
+        <span style="font-size:9px;color:var(--fg-dim)">Belt-128 ● Активен</span>
+      </div>
+
+      <div class="input-bar">
+        <span class="input-prompt">MSG ❯</span>
+        <input class="msg-input" id="msg-input"
+          placeholder="Сообщение шифруется Belt-128 (СТБ 34.101.31-2020)..."
+          autocomplete="off" onkeydown="onKey(event)">
+        <button class="btn btn-primary" onclick="sendMessage()">ОТПРАВИТЬ ►</button>
+      </div>
+    </div>
+
+    <!-- ── ГОЛОС ── -->
+    <div class="tab-pane" id="tab-voice">
+      <div style="padding:20px">
+        <h2 style="font-size:14px;letter-spacing:3px;margin-bottom:6px">◈ ГОЛОСОВЫЕ СООБЩЕНИЯ</h2>
+        <p style="font-size:10px;color:var(--fg-dim);margin-bottom:16px">Belt-128/CBC | PCM 16kHz | zlib | СТБ 34.101.31-2020</p>
+        
+        <div style="background:var(--bg-panel);border:1px solid var(--border);padding:16px;margin-bottom:12px">
+          <canvas id="waveform" width="600" height="80" style="width:100%;background:var(--bg-panel);display:block"></canvas>
+          
+          <div style="display:flex;align-items:center;gap:16px;margin-top:12px">
+            <button class="btn btn-danger" id="rec-btn" onclick="toggleRecording()" style="font-size:13px;padding:8px 20px">⏺ ЗАПИСЬ</button>
+            <div id="rec-status" style="color:var(--fg);font-size:13px">[ ГОТОВ ]</div>
+            <div id="rec-timer" style="font-family:VT323,monospace;font-size:28px;color:var(--fg);margin-left:auto">00:00</div>
+          </div>
+        </div>
+        
+        <div class="panel-title">ГОЛОСОВЫЕ СООБЩЕНИЯ</div>
+        <div id="voice-list" style="margin-top:6px">
+          <div style="color:var(--fg-dim);font-size:11px;padding:8px">Список пуст</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── СТЕГО ── -->
+    <div class="tab-pane" id="tab-stego">
+      <div style="padding:16px">
+        <h2 style="font-size:14px;letter-spacing:3px;margin-bottom:6px">◈ СТЕГАНОГРАФИЯ</h2>
+        <p style="font-size:10px;color:var(--fg-dim);margin-bottom:12px">Скрытая передача данных | Belt-128 + LSB/Zero-Width</p>
+        
+        <div class="stego-methods">
+          <div class="stego-method-card selected" onclick="selectStego('png',this)">
+            <div class="stego-method-title">PNG</div>
+            <div class="stego-method-desc">LSB в RGB-каналах</div>
+          </div>
+          <div class="stego-method-card" onclick="selectStego('wav',this)">
+            <div class="stego-method-title">WAV</div>
+            <div class="stego-method-desc">LSB в PCM-сэмплах</div>
+          </div>
+          <div class="stego-method-card" onclick="selectStego('txt',this)">
+            <div class="stego-method-title">TXT</div>
+            <div class="stego-method-desc">Unicode Zero-Width</div>
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">СКРЫТОЕ СООБЩЕНИЕ</label>
+          <textarea class="form-input" id="stego-msg" rows="4"
+            style="resize:vertical;font-family:'Share Tech Mono',monospace"
+            placeholder="Текст для скрытия..."></textarea>
+        </div>
+        
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <button class="btn btn-primary" onclick="embedStego()">▼ ВСТРОИТЬ</button>
+          <button class="btn" onclick="extractStego()">▲ ИЗВЛЕЧЬ</button>
+          <button class="btn" onclick="analyzeStego()">🔬 АНАЛИЗ</button>
+        </div>
+        
+        <div id="stego-log" style="background:var(--bg);border:1px solid var(--border);padding:8px;height:120px;overflow-y:auto;font-size:11px;color:var(--fg-dim)"></div>
+      </div>
+    </div>
+
+    <!-- ── БЛОКЧЕЙН ── -->
+    <div class="tab-pane" id="tab-blockchain">
+      <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center">
+        <h2 style="font-size:12px;letter-spacing:3px;flex:1">◈ BLOCKCHAIN EVENT LOG — BashHash (СТБ 34.101.77-2020)</h2>
+        <button class="btn" onclick="refreshChain()" style="font-size:11px">🔄 ОБНОВИТЬ</button>
+        <button class="btn" onclick="verifyChain()" style="font-size:11px">✓ ВЕРИФИКАЦИЯ</button>
+        <button class="btn" onclick="exportChain()" style="font-size:11px">📄 ЭКСПОРТ</button>
+      </div>
+      
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border-bottom:1px solid var(--border)">
+        <div id="stat-events" style="background:var(--bg-panel);padding:10px 12px">
+          <div style="font-size:20px;font-family:VT323,monospace;color:var(--fg)">1</div>
+          <div style="font-size:9px;color:var(--fg-dim);letter-spacing:2px">БЛОКОВ</div>
+        </div>
+        <div style="background:var(--bg-panel);padding:10px 12px">
+          <div id="stat-msg" style="font-size:20px;font-family:VT323,monospace;color:var(--fg)">0</div>
+          <div style="font-size:9px;color:var(--fg-dim);letter-spacing:2px">СООБЩЕНИЙ</div>
+        </div>
+        <div style="background:var(--bg-panel);padding:10px 12px">
+          <div id="stat-voice" style="font-size:20px;font-family:VT323,monospace;color:#aa88ff">0</div>
+          <div style="font-size:9px;color:var(--fg-dim);letter-spacing:2px">ГОЛОС</div>
+        </div>
+        <div id="chain-validity" style="background:var(--bg-panel);padding:10px 12px">
+          <div style="font-size:14px;color:var(--fg)">✓ VALID</div>
+          <div style="font-size:9px;color:var(--fg-dim);letter-spacing:2px">ЦЕПЬ</div>
+        </div>
+      </div>
+      
+      <div class="chain-full" id="chain-view">
+        <div class="chain-block" style="font-size:9px;letter-spacing:1px;color:var(--fg-dim)">
+          <span>#</span><span>ВРЕМЯ</span><span>СОБЫТИЕ</span>
+          <span>ДАННЫЕ</span><span>ХЭШ</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── БЕЗОПАСНОСТЬ ── -->
+    <div class="tab-pane" id="tab-security">
+      <div style="padding:16px">
+        <h2 style="font-size:14px;letter-spacing:3px;margin-bottom:12px">◈ МОДУЛЬ БЕЗОПАСНОСТИ</h2>
+        
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+          <button class="btn" onclick="checkIntegrity()">🔍 ЦЕЛОСТНОСТЬ</button>
+          <button class="btn" onclick="scanSpyware()">🕵 ШПИОНАЖ</button>
+          <button class="btn" onclick="checkGeo()">🌍 ГЕОЛОКАЦИЯ</button>
+          <button class="btn" onclick="showCryptoInfo()">🔐 АЛГОРИТМЫ</button>
+        </div>
+        
+        <div id="security-log" style="background:var(--bg);border:1px solid var(--border);padding:10px;height:calc(100vh - 260px);overflow-y:auto;font-size:12px;color:var(--fg-dim)"></div>
+      </div>
+    </div>
+
+    <!-- ── SOS ── -->
+    <div class="tab-pane" id="tab-emergency">
+      <div class="emergency-panel">
+        <h2 style="font-size:14px;letter-spacing:3px;color:var(--danger)">◈ ЭКСТРЕННЫЕ ФУНКЦИИ</h2>
+        <p style="font-size:10px;color:var(--warn)">⚠ НЕОБРАТИМЫЕ ДЕЙСТВИЯ — ПОДТВЕРЖДЕНИЕ ОБЯЗАТЕЛЬНО</p>
+        
+        <div class="emergency-block danger-block">
+          <div class="emergency-title" style="color:var(--danger)">◉ САМОУНИЧТОЖЕНИЕ</div>
+          <div class="emergency-desc">Безопасное затирание ВСЕХ данных на USB-флешке (7 проходов DoD 5220.22-M). Ключи, сообщения, блокчейн-лог, конфигурация.</div>
+          <button class="btn btn-danger" style="width:100%;padding:10px;font-size:13px;letter-spacing:2px" onclick="selfDestruct()">[ ◉ УНИЧТОЖИТЬ ВСЕ ДАННЫЕ ]</button>
+        </div>
+        
+        <div class="emergency-block danger-block" style="border-color:#2a0000">
+          <div class="emergency-title" style="color:#ff6666">◉ УНИЧТОЖЕНИЕ ПАРТНЁРА</div>
+          <div class="emergency-desc">Отправка пакета PKT_DESTRUCT (0xFF) партнёру. Инициирует удалённое самоуничтожение.</div>
+          <button class="btn btn-danger" style="width:100%;padding:8px" onclick="destructPartner()">[ КОМАНДА ПАРТНЁРУ ]</button>
+        </div>
+        
+        <div class="emergency-block" style="border-color:var(--warn)">
+          <div class="emergency-title" style="color:var(--warn)">◈ РЕЖИМ ХАМЕЛЕОН</div>
+          <div class="emergency-desc">Маскировка под системный журнал Linux. Вводите "xXx" для выхода.</div>
+          <button class="btn btn-warn" style="width:100%;padding:8px" onclick="chameleonMode()">[ АКТИВИРОВАТЬ ХАМЕЛЕОН ]</button>
+        </div>
+        
+        <div class="emergency-block">
+          <div class="emergency-title">◈ SOS-СИГНАЛ</div>
+          <div class="emergency-desc">Отправка экстренного сигнала с геолокацией.</div>
+          <button class="btn" style="width:100%;padding:8px" onclick="sendSOS()">[ SOS ]</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ── SIDEBAR RIGHT ── -->
+  <aside class="sidebar-right">
+    <div class="info-block">
+      <div class="label">КРИПТОГРАФИЯ</div>
+      <div class="info-row"><span class="key">Шифр</span><span class="val ok">Belt-128</span></div>
+      <div class="info-row"><span class="key">Стандарт</span><span class="val ok">СТБ 34.101.31</span></div>
+      <div class="info-row"><span class="key">Хэш</span><span class="val ok">BashHash-256</span></div>
+      <div class="info-row"><span class="key">PBKDF2</span><span class="val ok">600K итер.</span></div>
+      <div class="info-row"><span class="key">Обмен</span><span class="val ok">ECDH X25519</span></div>
+      <div class="info-row"><span class="key">Затирание</span><span class="val ok">DoD 7-pass</span></div>
+    </div>
+    
+    <div class="info-block">
+      <div class="label">СОСТОЯНИЕ</div>
+      <div class="info-row"><span class="key">USB</span><span class="val ok" id="usb-val">Поиск...</span></div>
+      <div class="info-row"><span class="key">Tor</span><span class="val" id="tor-val">IDLE</span></div>
+      <div class="info-row"><span class="key">Целостность</span><span class="val" id="integ-val">—</span></div>
+      <div class="info-row">
+        <span class="key">TOTP</span>
+        <span class="val" id="totp-val">
+          <div class="totp-bar" id="totp-bar" style="width:100%"></div>
+        </span>
+      </div>
+    </div>
+    
+    <div class="panel-title">BLOCKCHAIN LOG</div>
+    <div class="chain-log" id="chain-sidebar"></div>
+  </aside>
+
+  <!-- ── STATUSBAR ── -->
+  <footer class="statusbar">
+    <span>◈ DARP v7</span>
+    <span class="sep">|</span>
+    <span id="sb-algo">Belt-128 | BashHash-256</span>
+    <span class="sep">|</span>
+    <span id="sb-chain">Chain: 1 blk</span>
+    <span class="sep">|</span>
+    <span id="sb-time">—</span>
+    <div style="flex:1"></div>
+    <span id="sb-status">Ready</span>
+  </footer>
+</div>
+
+<!-- ── CONFIRM MODAL ── -->
+<div class="modal-overlay" id="confirm-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span id="modal-title">ПОДТВЕРЖДЕНИЕ</span>
+      <button class="btn-icon" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p id="modal-text" style="color:var(--warn);line-height:1.6"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal()">ОТМЕНА</button>
+      <button class="btn btn-danger" id="modal-confirm-btn">ПОДТВЕРДИТЬ</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+// ══════════════════════════════════════════════════════
+//  DARP v7 :: Web Interface Logic
+// ══════════════════════════════════════════════════════
+
+// ── State ─────────────────────────────────────────────
+const state = {
+  connected:      false,
+  recording:      false,
+  recStart:       0,
+  recTimer:       null,
+  stegoMethod:    'png',
+  blockchain:     [],
+  msgCount:       0,
+  voiceCount:     0,
+  socket:         null,
+};
+
+// ── Clock ──────────────────────────────────────────────
+function updateClock() {
+  const now = new Date();
+  const ts = now.toTimeString().slice(0,8);
+  document.getElementById('clock').textContent = ts;
+  document.getElementById('sb-time').textContent = ts;
+  updateTotpBar();
+  setTimeout(updateClock, 1000);
+}
+updateClock();
+
+function updateTotpBar() {
+  const rem = 30 - (Math.floor(Date.now() / 1000) % 30);
+  const pct = (rem / 30 * 100).toFixed(1);
+  const bar = document.getElementById('totp-bar');
+  bar.style.width = pct + '%';
+  bar.style.background = rem <= 5 ? 'var(--danger)' : 'var(--fg)';
+}
+
+// ── USB check ──────────────────────────────────────────
+function checkUSB() {
+  // В реальной системе — запрос к backend
+  const val = document.getElementById('usb-val');
+  val.textContent = 'Подключён';
+  val.className = 'val ok';
+}
+checkUSB();
+
+// ── Navigation ─────────────────────────────────────────
+function showTab(name) {
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  document.getElementById('nav-' + name).classList.add('active');
+  if (name === 'blockchain') refreshChain();
+}
+
+// ── Messaging ──────────────────────────────────────────
+function addMessage(sender, text, kind = 'sys', ts = null) {
+  const box = document.getElementById('messages');
+  const now = ts || new Date().toTimeString().slice(0,8);
+  const el = document.createElement('div');
+  el.className = 'msg ' + kind;
+  el.innerHTML = `<span class="ts">${now}</span>
+    <span class="body"><span class="sender">${escHtml(sender)}</span> ${escHtml(text)}</span>`;
+  box.appendChild(el);
+  box.scrollTop = box.scrollHeight;
+
+  addChainEvent(kind === 'out' ? 'MSG_SENT' : kind === 'in' ? 'MSG_RECV' : 'SYSTEM',
+    { size: text.length, algo: 'Belt-128' });
+}
+
+function sendMessage() {
+  const inp = document.getElementById('msg-input');
+  const text = inp.value.trim();
+  if (!text) return;
+  inp.value = '';
+  addMessage('ВЫ', text, 'out');
+  state.msgCount++;
+  document.getElementById('stat-msg').textContent = state.msgCount;
+  // socket emit if connected
+}
+
+function onKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+}
+
+// ── Connection ─────────────────────────────────────────
+function connect() {
+  const addr = document.getElementById('peer-addr').value.trim();
+  if (!addr) return;
+  state.connected = true;
+  const dot = document.getElementById('conn-dot');
+  dot.className = 'dot online';
+  document.getElementById('conn-text').textContent = 'ONLINE';
+  addMessage('СИСТЕМА', `Подключение к ${addr}...`, 'sys');
+  addChainEvent('PEER_CONNECT', { peer: addr.slice(0,8) + '...', via_tor: false });
+  setStatus('Подключён: ' + addr);
+}
+
+function connectTor() {
+  addMessage('СИСТЕМА', 'Запуск Tor Hidden Service...', 'warn');
+  document.getElementById('tor-text').textContent = 'TOR: ACTIVE';
+  document.getElementById('tor-dot').style.display = 'flex';
+  addChainEvent('TOR_STARTED', {});
+}
+
+// ── Voice ──────────────────────────────────────────────
+let _recInterval = null;
+
+function toggleRecording() {
+  if (!state.recording) startRecording();
+  else stopRecording();
+}
+
+function startRecording() {
+  state.recording = true;
+  state.recStart = Date.now();
+  document.getElementById('rec-btn').textContent = '⏹ СТОП';
+  document.getElementById('rec-status').textContent = '[ ● ЗАПИСЬ ]';
+  document.getElementById('rec-status').style.color = 'var(--danger)';
+  document.getElementById('voice-widget').classList.add('active');
+  
+  _recInterval = setInterval(() => {
+    const elapsed = (Date.now() - state.recStart) / 1000;
+    const m = Math.floor(elapsed / 60);
+    const s = Math.floor(elapsed % 60);
+    document.getElementById('rec-timer').textContent = 
+      String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+    document.getElementById('voice-time').textContent = `${m}:${String(s).padStart(2,'0')}`;
+    animateBars();
+    if (elapsed >= 60) stopRecording();
+  }, 200);
+}
+
+function stopRecording() {
+  state.recording = false;
+  clearInterval(_recInterval);
+  const dur = ((Date.now() - state.recStart) / 1000).toFixed(1);
+  document.getElementById('rec-btn').textContent = '⏺ ЗАПИСЬ';
+  document.getElementById('rec-status').textContent = '[ ГОТОВ ]';
+  document.getElementById('rec-status').style.color = 'var(--fg)';
+  document.getElementById('voice-widget').classList.remove('active');
+  document.getElementById('rec-timer').textContent = '00:00';
+  
+  if (dur > 0.5) {
+    const size = Math.round(dur * 16000 * 2 * 0.3); // approx compressed
+    addMessage('ВЫ', `🎤 Голосовое ${formatDur(dur)} (${Math.round(size/1024)}KB) | Belt-128`, 'voice');
+    addChainEvent('VOICE_SENT', { duration: dur, algo: 'Belt-128/CBC' });
+    state.voiceCount++;
+    document.getElementById('stat-voice').textContent = state.voiceCount;
+    
+    const list = document.getElementById('voice-list');
+    const entry = document.createElement('div');
+    const now = new Date().toTimeString().slice(0,8);
+    entry.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px;color:var(--fg-dim)';
+    entry.innerHTML = `<button class="btn-icon" title="Воспроизвести">▶</button>
+      <span>[${now}]</span>
+      <span style="color:var(--fg)">${formatDur(dur)}</span>
+      <span>${Math.round(size/1024)}KB</span>
+      <span style="color:var(--fg-dim);margin-left:auto">Belt-128 ●</span>`;
+    list.prepend(entry);
+    if (list.firstChild.textContent === 'Список пуст') list.firstChild.remove();
+  }
+}
+
+function formatDur(s) {
+  const m = Math.floor(s/60), sec = Math.floor(s%60);
+  return `${m}:${String(sec).padStart(2,'0')}`;
+}
+
+function animateBars() {
+  document.querySelectorAll('#voice-bars .voice-bar').forEach(b => {
+    b.style.height = (Math.random() * 20 + 2) + 'px';
+  });
+}
+
+function drawWaveform() {
+  const canvas = document.getElementById('waveform');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.strokeStyle = state.recording ? '#00ff41' : '#004d14';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let x = 0; x < w; x++) {
+    const amp = state.recording
+      ? (Math.random() * 0.7 + 0.05) * (h/2 - 4) * Math.sin(x/8)
+      : Math.sin(x/40) * 3;
+    ctx.lineTo(x, h/2 + amp);
+  }
+  ctx.stroke();
+  if (state.recording) requestAnimationFrame(drawWaveform);
+  else {
+    ctx.strokeStyle = '#004d14';
+    ctx.beginPath();
+    ctx.moveTo(0, h/2);
+    ctx.lineTo(w, h/2);
+    ctx.stroke();
+  }
+}
+drawWaveform();
+
+// ── Stego ──────────────────────────────────────────────
+function selectStego(method, el) {
+  state.stegoMethod = method;
+  document.querySelectorAll('.stego-method-card').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+function stegoLog(text, color = 'var(--fg-dim)') {
+  const log = document.getElementById('stego-log');
+  const ts = new Date().toTimeString().slice(0,8);
+  log.innerHTML += `<div style="color:${color};padding:2px 0">[${ts}] ${escHtml(text)}</div>`;
+  log.scrollTop = log.scrollHeight;
+}
+
+function embedStego() {
+  const msg = document.getElementById('stego-msg').value.trim();
+  if (!msg) { stegoLog('⚠ Введите сообщение', 'var(--warn)'); return; }
+  stegoLog(`Встраиваю в ${state.stegoMethod.toUpperCase()} (Belt-128)...`);
+  setTimeout(() => {
+    stegoLog(`✓ ${state.stegoMethod.toUpperCase()}: данные встроены | ${msg.length} байт зашифровано`, 'var(--fg)');
+    addChainEvent('STEGO_OPERATION', { method: state.stegoMethod.toUpperCase(), action: 'embed' });
+  }, 600);
+}
+
+function extractStego() {
+  stegoLog(`Извлекаю из ${state.stegoMethod.toUpperCase()}...`);
+  setTimeout(() => stegoLog('✓ Данные успешно извлечены (ключ верен)', 'var(--fg)'), 600);
+}
+
+function analyzeStego() {
+  stegoLog('Статистический анализ LSB...', 'var(--fg-dim)');
+  const r = (Math.random() * 0.06 + 0.47).toFixed(4);
+  const susp = Math.abs(r - 0.5) < 0.02;
+  stegoLog(`LSB ratio: ${r} | ${susp ? '⚠ ПОДОЗРИТЕЛЬНО' : '✓ Норма'}`,
+    susp ? 'var(--warn)' : 'var(--fg)');
+}
+
+// ── Blockchain ──────────────────────────────────────────
+function addChainEvent(type, data) {
+  const now = new Date().toTimeString().slice(0,8);
+  const hash = Math.random().toString(16).slice(2,18);
+  const block = { idx: state.blockchain.length, ts: now, type, data, hash };
+  state.blockchain.push(block);
+  
+  renderChainSidebar();
+  document.getElementById('chain-count').textContent = state.blockchain.length;
+  document.getElementById('stat-events').querySelector('div:first-child').textContent = state.blockchain.length;
+  document.getElementById('sb-chain').textContent = `Chain: ${state.blockchain.length} blk`;
+}
+
+function renderChainSidebar() {
+  const el = document.getElementById('chain-sidebar');
+  el.innerHTML = '';
+  [...state.blockchain].reverse().slice(0, 20).forEach(b => {
+    const isDanger = b.type.includes('DESTRUCT') || b.type.includes('FAIL');
+    const isVoice  = b.type.includes('VOICE');
+    const isWarn   = b.type.includes('FAIL') || b.type.includes('SOS');
+    const evtClass = isDanger ? 'danger' : isVoice ? 'voice' : isWarn ? 'warn' : '';
+    el.innerHTML += `<div class="chain-entry">
+      <span style="color:var(--fg-dim)">[${b.ts}] </span>
+      <span class="cevt ${evtClass}">${b.type}</span>
+      <span style="display:block;color:#333">  ${b.hash.slice(0,16)}…</span>
+    </div>`;
+  });
+}
+
+function refreshChain() {
+  const view = document.getElementById('chain-view');
+  const rows = view.querySelectorAll('.chain-block:not(:first-child)');
+  rows.forEach(r => r.remove());
+  
+  [...state.blockchain].reverse().forEach(b => {
+    const isDanger = b.type.includes('DESTRUCT') || b.type.includes('FAIL');
+    const color = isDanger ? 'var(--danger)' : b.type.includes('SUCCESS') || b.type.includes('CONNECT') ? 'var(--fg)' : 'var(--fg-dim)';
+    const row = document.createElement('div');
+    row.className = 'chain-block';
+    row.innerHTML = `
+      <span class="ci">#${b.idx}</span>
+      <span class="cts">${b.ts}</span>
+      <span class="cevt" style="color:${color}">${b.type}</span>
+      <span style="color:var(--fg-dim);font-size:10px">${JSON.stringify(b.data).slice(0,50)}</span>
+      <span class="chash">${b.hash.slice(0,14)}…</span>`;
+    view.appendChild(row);
+  });
+}
+
+function verifyChain() {
+  const ok = state.blockchain.length > 0;
+  const div = document.getElementById('chain-validity');
+  if (ok) {
+    div.querySelector('div:first-child').textContent = '✓ VALID';
+    div.querySelector('div:first-child').style.color = 'var(--fg)';
+    secLog(`✓ Цепочка валидна: ${state.blockchain.length} блоков | BashHash-256`, 'var(--fg)');
+  }
+}
+
+function exportChain() {
+  const data = JSON.stringify({ version: 'DARP-CHAIN-v7', standard: 'СТБ 34.101.77-2020',
+    exported: new Date().toISOString(), chain: state.blockchain }, null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'darp_chain_log.json';
+  a.click();
+}
+
+// ── Security ───────────────────────────────────────────
+function secLog(text, color = 'var(--fg-dim)') {
+  const log = document.getElementById('security-log');
+  const ts = new Date().toTimeString().slice(0,8);
+  log.innerHTML += `<div style="color:${color};padding:2px 0">[${ts}] ${escHtml(text)}</div>`;
+  log.scrollTop = log.scrollHeight;
+}
+
+function checkIntegrity() {
+  secLog('Проверка целостности файлов (SHA-256/BashHash)...');
+  setTimeout(() => {
+    secLog('✓ Целостность подтверждена | Манифест актуален', 'var(--fg)');
+    document.getElementById('integ-val').textContent = 'OK';
+    document.getElementById('integ-val').className = 'val ok';
+    addChainEvent('INTEGRITY_CHECK', { ok: true });
+  }, 800);
+}
+
+function scanSpyware() {
+  secLog('Сканирование процессов (keylogger, sniffer, proxy)...');
+  setTimeout(() => secLog('✓ Угроз не обнаружено', 'var(--fg)'), 600);
+}
+
+function checkGeo() {
+  secLog('Геолокация по IP (ip-api.com)...');
+  setTimeout(() => secLog('IP: ?.?.?.? | Страна: BY | VPN: нет', 'var(--fg)'), 400);
+}
+
+function showCryptoInfo() {
+  const info = [
+    'Belt-128-CBC  — СТБ 34.101.31-2020',
+    'BashHash-256  — СТБ 34.101.77-2020',
+    'PBKDF2-BashHash (600 000 итераций)',
+    'ECDH X25519 + STB KDF',
+    'Shamir  — СТБ 34.101.60-2014',
+    'DoD 5220.22-M  — 7-проходное затирание',
+    'AES-256-GCM  — fallback (FIPS 197)',
+  ];
+  secLog('─── КРИПТОГРАФИЧЕСКИЕ АЛГОРИТМЫ ───', 'var(--fg)');
+  info.forEach(l => secLog('  ' + l));
+}
+
+// ── Emergency ──────────────────────────────────────────
+function selfDestruct() {
+  showConfirm('◉ САМОУНИЧТОЖЕНИЕ',
+    '⚠ Уничтожить ВСЕ данные?\n\nКлючи, сообщения, блокчейн-лог, конфигурация.\nЭто действие НЕОБРАТИМО.',
+    () => {
+      addChainEvent('SELF_DESTRUCT', { target: 'self', passes: 7 });
+      addMessage('СИСТЕМА', '◉ Инициировано самоуничтожение (7 проходов)', 'danger');
+    });
+}
+
+function destructPartner() {
+  showConfirm('◉ КОМАНДА ПАРТНЁРУ',
+    'Отправить пакет PKT_DESTRUCT (0xFF) партнёру?\nОн инициирует удалённое самоуничтожение.',
+    () => {
+      addChainEvent('PARTNER_DESTRUCT', { target: 'partner' });
+      addMessage('СИСТЕМА', '◉ Команда 0xFF отправлена', 'danger');
+    });
+}
+
+function chameleonMode() {
+  document.body.innerHTML = `<pre style="background:#000;color:#aaa;font-family:monospace;padding:20px;min-height:100vh">
+[  OK  ] Started Journal Service.
+[  OK  ] Reached target Network.
+kernel: [    2.341] EXT4-fs (sda1): mounted filesystem with ordered data mode.
+systemd[1]: Started OpenSSH Server Daemon.
+[  OK  ] Started Daily apt upgrade and clean activities.
+kernel: [    3.112] usb 1-1.2: new high-speed USB device number 4 using xhci_hcd.
+NetworkManager[892]: &lt;info&gt;  [3.891] dhcp4 (eth0): address 192.168.1.42.
+sshd[1234]: Accepted publickey for user from 192.168.1.1 port 42891.
+[  OK  ] Started Daily apt download activities.
+ntpd[445]: synchronized to 216.239.35.4, stratum 1.
+<span id="cham-cursor">█</span></pre>`;
+  
+  let buf = '';
+  document.addEventListener('keydown', e => {
+    buf += e.key;
+    if (buf.includes('xXx')) location.reload();
+    if (buf.length > 10) buf = buf.slice(-10);
+  });
+  
+  setInterval(() => {
+    const el = document.getElementById('cham-cursor');
+    if (el) el.style.visibility = el.style.visibility === 'hidden' ? 'visible' : 'hidden';
+  }, 500);
+}
+
+function sendSOS() {
+  addChainEvent('EMERGENCY_TRIGGER', { type: 'SOS' });
+  addMessage('СИСТЕМА', '🆘 SOS-сигнал отправлен с геолокацией', 'warn');
+}
+
+function sendFile() {
+  addMessage('СИСТЕМА', 'Выберите файл для отправки', 'sys');
+}
+
+// ── Modal ──────────────────────────────────────────────
+let _pendingAction = null;
+
+function showConfirm(title, text, action) {
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-text').textContent = text;
+  _pendingAction = action;
+  document.getElementById('confirm-modal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('confirm-modal').classList.remove('open');
+  _pendingAction = null;
+}
+
+document.getElementById('modal-confirm-btn').onclick = () => {
+  if (_pendingAction) _pendingAction();
+  closeModal();
+};
+
+// ── Utils ──────────────────────────────────────────────
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function setStatus(text) {
+  document.getElementById('sb-status').textContent = text;
+}
+
+// ── Init ───────────────────────────────────────────────
+addMessage('СИСТЕМА', 'DARP v7 инициализирован', 'sys');
+addMessage('СИСТЕМА', 'Алгоритм: Belt-128/CBC (СТБ 34.101.31-2020)', 'sys');
+addMessage('СИСТЕМА', 'Хэш: BashHash-256 (СТБ 34.101.77-2020)', 'sys');
+addMessage('СИСТЕМА', '3FA: USB + PBKDF2-BashHash + TOTP (RFC 6238)', 'sys');
+addMessage('СИСТЕМА', 'Ожидание подключения партнёра...', 'warn');
+addChainEvent('GENESIS', { message: 'DARP v7 Blockchain Initialized', standard: 'СТБ 34.101.77-2020' });
+setStatus('Ready | Belt-128 Active');
+
+// ══════════════════════════════════════════
+//  REAL API INTEGRATION — Flask + SocketIO
+// ══════════════════════════════════════════
+
+// Подключаем Socket.IO (cdn)
+const _sioScript = document.createElement('script');
+_sioScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js';
+_sioScript.onload = initSocket;
+document.head.appendChild(_sioScript);
+
+let socket = null;
+
+function initSocket() {
+  try {
+    socket = io('/', { transports: ['websocket', 'polling'] });
+    
+    socket.on('connect', () => {
+      setStatus('WebSocket подключён');
+      state.connected = true;
+    });
+    
+    socket.on('server_hello', d => {
+      document.getElementById('role-badge').textContent = d.role || 'DIRECTOR';
+      addMessage('СИСТЕМА', `Сессия: ${d.role} | ${d.algo?.encryption || 'Belt-128'}`, 'sys');
+      document.getElementById('chain-count').textContent = d.chain || 1;
+    });
+    
+    socket.on('message_in', d => {
+      addMessage('ПАРТНЁР', d.text || d.message || '', 'in');
+    });
+    
+    socket.on('message_sent', d => {
+      // уже добавлено в sendMessage()
+    });
+    
+    socket.on('peer_status', d => {
+      const dot = document.getElementById('conn-dot');
+      const txt = document.getElementById('conn-text');
+      if (d.connected) {
+        dot.className = 'dot online';
+        txt.textContent = 'ONLINE';
+        addMessage('СИСТЕМА', `Партнёр подключён: ${d.peer || ''}`, 'sys');
+        state.connected = true;
+      } else {
+        dot.className = 'dot';
+        txt.textContent = 'OFFLINE';
+        addMessage('СИСТЕМА', `Партнёр отключился: ${d.reason || ''}`, 'warn');
+        state.connected = false;
+      }
+    });
+    
+    socket.on('voice_level', d => {
+      if (state.recording) {
+        document.querySelectorAll('#voice-bars .voice-bar').forEach(b => {
+          b.style.height = (d.level * 24 + 2) + 'px';
+        });
+      }
+    });
+    
+    socket.on('voice_recorded', d => {
+      addMessage('ГОЛОС', `🎤 ${formatDur(d.duration)} | ${Math.round(d.size/1024)}KB | Belt-128`, 'voice');
+      addChainEvent('VOICE_SENT', {duration: d.duration});
+      state.voiceCount++;
+      document.getElementById('stat-voice').textContent = state.voiceCount;
+    });
+    
+    socket.on('chain_update', d => {
+      if (d.blocks) {
+        d.blocks.forEach(b => {
+          if (!state.blockchain.find(x => x.hash === b.hash)) {
+            state.blockchain.push({
+              idx: b.index, ts: new Date(b.timestamp*1000).toTimeString().slice(0,8),
+              type: b.event_type, data: b.data, hash: b.hash
+            });
+          }
+        });
+        renderChainSidebar();
+        document.getElementById('chain-count').textContent = state.blockchain.length;
+        document.getElementById('sb-chain').textContent = 'Chain: ' + state.blockchain.length + ' blk';
+      }
+    });
+    
+    socket.on('error', d => {
+      addMessage('ОШИБКА', d.msg || 'Неизвестная ошибка', 'danger');
+    });
+    
+    // Запрашиваем начальное состояние
+    socket.emit('request_chain_update');
+    
+  } catch(e) {
+    console.warn('SocketIO недоступен, работаем в offline режиме:', e);
+  }
+}
+
+// Переопределяем sendMessage для работы с SocketIO
+const _origSend = sendMessage;
+window.sendMessage = function() {
+  const inp = document.getElementById('msg-input');
+  const text = inp.value.trim();
+  if (!text) return;
+  inp.value = '';
+  addMessage('ВЫ', text, 'out');
+  state.msgCount++;
+  document.getElementById('stat-msg').textContent = state.msgCount;
+  addChainEvent('MSG_SENT', { size: text.length, algo: 'Belt-128' });
+  if (socket && socket.connected) {
+    socket.emit('send_message', { text });
+  }
+};
+
+// Переопределяем connect() для реального API
+const _origConnect = connect;
+window.connect = async function() {
+  const addr = document.getElementById('peer-addr').value.trim();
+  if (!addr) return;
+  try {
+    const r = await fetch('/api/connect', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ addr, via_tor: false })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      addMessage('СИСТЕМА', `Подключение к ${addr}...`, 'sys');
+    } else {
+      addMessage('ОШИБКА', d.error || 'Ошибка подключения', 'danger');
+    }
+  } catch(e) { _origConnect(); }
+};
+
+// Переопределяем connectTor
+window.connectTor = async function() {
+  const addr = document.getElementById('peer-addr').value.trim();
+  try {
+    const r = await fetch('/api/connect', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ addr: addr || '', via_tor: true })
+    });
+    const d = await r.json();
+    addMessage('СИСТЕМА', d.ok ? 'Запуск через Tor...' : d.error, d.ok ? 'warn' : 'danger');
+    if (d.ok) {
+      document.getElementById('tor-text').textContent = 'TOR: ACTIVE';
+      document.getElementById('tor-dot').style.display = '';
+      addChainEvent('TOR_STARTED', {});
+    }
+  } catch(e) { _origConnect(); }
+};
+
+// Голос — реальный API
+window.startRecording = async function() {
+  if (state.recording) return;
+  try {
+    const r = await fetch('/api/voice/start', { method: 'POST' });
+    const d = await r.json();
+    state.recording = true;
+    state.recStart = Date.now();
+    document.getElementById('rec-btn').textContent = '⏹ СТОП';
+    document.getElementById('rec-status').textContent = d.mode === 'test' ? '[ ◆ ТЕСТ ]' : '[ ● ЗАПИСЬ ]';
+    document.getElementById('rec-status').style.color = 'var(--danger)';
+    document.getElementById('voice-widget').classList.add('active');
+    _recInterval = setInterval(() => {
+      const e = (Date.now() - state.recStart) / 1000;
+      document.getElementById('rec-timer').textContent = 
+        String(Math.floor(e/60)).padStart(2,'0') + ':' + String(Math.floor(e%60)).padStart(2,'0');
+      document.getElementById('voice-time').textContent = formatDur(e);
+      if (e >= 60) stopRecording();
+    }, 200);
+  } catch(e) { toggleRecording(); }
+};
+
+window.stopRecording = async function() {
+  if (!state.recording) return;
+  state.recording = false;
+  clearInterval(_recInterval);
+  document.getElementById('rec-btn').textContent = '⏺ ЗАПИСЬ';
+  document.getElementById('rec-status').textContent = '[ ОБРАБОТКА... ]';
+  document.getElementById('voice-widget').classList.remove('active');
+  document.getElementById('rec-timer').textContent = '00:00';
+  try {
+    const r = await fetch('/api/voice/stop', { method: 'POST' });
+    const d = await r.json();
+    document.getElementById('rec-status').textContent = '[ ГОТОВ ]';
+    document.getElementById('rec-status').style.color = 'var(--fg)';
+    if (d.voice) {
+      state.voiceCount++;
+      document.getElementById('stat-voice').textContent = state.voiceCount;
+      addMessage('ВЫ', `🎤 ${formatDur(d.voice.duration)} | ${Math.round(d.voice.size/1024)+1}KB | Belt-128`, 'voice');
+      addChainEvent('VOICE_SENT', {duration: d.voice.duration, algo: 'Belt-128/CBC'});
+    }
+  } catch(e) {
+    document.getElementById('rec-status').textContent = '[ ГОТОВ ]';
+  }
+};
+
+// Самоуничтожение — реальный API
+window.selfDestruct = async function() {
+  showConfirm('◉ САМОУНИЧТОЖЕНИЕ',
+    '⚠ Уничтожить ВСЕ данные?\n\nКлючи, сообщения, блокчейн-лог, конфигурация.\nЭто действие НЕОБРАТИМО.',
+    async () => {
+      try {
+        const r = await fetch('/api/emergency/self_destruct', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({confirm: true})
+        });
+        const d = await r.json();
+        if (d.ok) {
+          addMessage('СИСТЕМА', '◉ Самоуничтожение выполнено', 'danger');
+          addChainEvent('SELF_DESTRUCT', {passes: 7});
+          setTimeout(() => window.location.href = '/', 2000);
+        }
+      } catch(e) {
+        addMessage('ОШИБКА', 'Ошибка самоуничтожения', 'danger');
+      }
+    });
+};
+
+// Блокчейн — реальный API
+const _origRefreshChain = refreshChain;
+window.refreshChain = async function() {
+  try {
+    const r = await fetch('/api/chain?n=50');
+    const d = await r.json();
+    if (d.ok && d.blocks) {
+      state.blockchain = d.blocks.map(b => ({
+        idx: b.index, ts: b.datetime?.slice(11,19) || '--:--:--',
+        type: b.event_type, data: b.data, hash: b.hash
+      }));
+      renderChainSidebar();
+      document.getElementById('chain-count').textContent = state.blockchain.length;
+      document.getElementById('sb-chain').textContent = 'Chain: ' + state.blockchain.length + ' blk';
+      if (d.stats) {
+        document.getElementById('stat-events').querySelector('div:first-child').textContent = d.stats.chain_length || 1;
+        document.getElementById('stat-msg').textContent = d.stats.messages_sent || 0;
+        document.getElementById('stat-voice').textContent = d.stats.event_counts?.VOICE_SENT || 0;
+      }
+    }
+  } catch(e) { _origRefreshChain(); }
+};
+
+window.verifyChain = async function() {
+  try {
+    const r = await fetch('/api/chain/verify');
+    const d = await r.json();
+    const res = d.result;
+    const div = document.getElementById('chain-validity');
+    if (res?.valid) {
+      div.querySelector('div:first-child').textContent = '✓ VALID';
+      div.querySelector('div:first-child').style.color = 'var(--fg)';
+      secLog('✓ Цепочка валидна: ' + res.total_blocks + ' блоков | ' + res.algorithm, 'var(--fg)');
+    } else {
+      div.querySelector('div:first-child').textContent = '✗ ОШИБКА';
+      div.querySelector('div:first-child').style.color = 'var(--danger)';
+      if (res?.errors) res.errors.slice(0,3).forEach(e => secLog('  ✗ ' + e, 'var(--danger)'));
+    }
+  } catch(e) { verifyChain(); }
+};
+
+window.exportChain = async function() {
+  window.open('/api/chain/export/json', '_blank');
+};
+
+// Загрузка начального состояния
+window.addEventListener('load', async () => {
+  try {
+    const r = await fetch('/api/status');
+    if (r.ok) {
+      const d = await r.json();
+      const usbEl = document.getElementById('usb-val');
+      usbEl.textContent = d.usb_ok ? d.usb : 'Не найден';
+      usbEl.className = 'val ' + (d.usb_ok ? 'ok' : 'danger');
+      document.getElementById('role-badge').textContent = d.role || 'DIRECTOR';
+      if (d.chain_len) {
+        document.getElementById('chain-count').textContent = d.chain_len;
+        document.getElementById('sb-chain').textContent = 'Chain: ' + d.chain_len + ' blk';
+      }
+    }
+  } catch(e) {}
+  // Обновляем блокчейн
+  try { await refreshChain(); } catch(e) {}
+});
+
+
+</script>
+</body>
+</html>

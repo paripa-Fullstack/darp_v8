@@ -1,0 +1,27 @@
+## DARP v8 — Зависимости Python
+## pip install -r requirements_v8.txt
+
+# Криптография (обязательно)
+cryptography>=41.0
+
+# 2FA / TOTP (обязательно)
+pyotp>=2.9
+qrcode[pil]>=7.4
+
+# Изображения / GUI (обязательно)
+pillow>=10.0
+
+# Мониторинг системы (обязательно)
+psutil>=5.9
+
+# HTTP / Геолокация (обязательно)
+requests>=2.31
+
+# Аудио — sounddevice (рекомендуется, работает без PortAudio)
+sounddevice>=0.4.6
+
+# Альтернативный аудио-бэкенд (опционально)
+# pyaudio>=0.2.14
+
+# Сборка в .exe (опционально)
+# pyinstaller>=6.0
